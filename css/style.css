@@ -123,6 +123,7 @@ button { font-family: inherit; }
   margin-top: auto;
 }
 .link-btn:active { color: var(--text); }
+.home-screen .link-btn { margin-top: 32px; }
 
 /* ---------- Tracker screens ---------- */
 .tracker-header {
