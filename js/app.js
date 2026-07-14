@@ -130,6 +130,11 @@
     return new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   }
 
+  function fmtTime24(ts) {
+    var d = new Date(ts);
+    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  }
+
   function money(n) {
     var sign = n < 0 ? "-" : "";
     return sign + "$" + Math.abs(n).toFixed(2);
@@ -213,12 +218,28 @@
   }
 
   function afterRender(name) {
-    if (name === "spend") renderSpend();
-    if (name === "calories") renderCalories();
+    if (name === "spend") { initSpendForm(); renderSpend(); }
+    if (name === "calories") { initCaloriesForm(); renderCalories(); }
     if (name === "analytics") renderAnalytics();
   }
 
   /* ---------------- Spend screen ---------------- */
+
+  function initSpendForm() {
+    document.getElementById("spend-form").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var amountEl = document.getElementById("spend-amount");
+      var descEl = document.getElementById("spend-desc");
+      var amount = parseFloat(amountEl.value);
+      var desc = descEl.value.trim();
+      if (!isFinite(amount) || amount < 0 || !desc) return;
+      addSpend(amount, desc);
+      amountEl.value = "";
+      descEl.value = "";
+      renderSpend();
+      amountEl.focus();
+    });
+  }
 
   function renderSpend() {
     var settings = getSettings();
@@ -261,23 +282,25 @@
         }));
       });
     }
-
-    document.getElementById("spend-form").addEventListener("submit", function (ev) {
-      ev.preventDefault();
-      var amountEl = document.getElementById("spend-amount");
-      var descEl = document.getElementById("spend-desc");
-      var amount = parseFloat(amountEl.value);
-      var desc = descEl.value.trim();
-      if (!isFinite(amount) || amount < 0 || !desc) return;
-      addSpend(amount, desc);
-      amountEl.value = "";
-      descEl.value = "";
-      renderSpend();
-      amountEl.focus();
-    });
   }
 
   /* ---------------- Calories screen ---------------- */
+
+  function initCaloriesForm() {
+    document.getElementById("cal-form").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var amountEl = document.getElementById("cal-amount");
+      var descEl = document.getElementById("cal-desc");
+      var kcal = parseFloat(amountEl.value);
+      var desc = descEl.value.trim();
+      if (!isFinite(kcal) || kcal < 0 || !desc) return;
+      addCalorie(kcal, desc);
+      amountEl.value = "";
+      descEl.value = "";
+      renderCalories();
+      amountEl.focus();
+    });
+  }
 
   function renderCalories() {
     var settings = getSettings();
@@ -310,20 +333,6 @@
         }));
       });
     }
-
-    document.getElementById("cal-form").addEventListener("submit", function (ev) {
-      ev.preventDefault();
-      var amountEl = document.getElementById("cal-amount");
-      var descEl = document.getElementById("cal-desc");
-      var kcal = parseFloat(amountEl.value);
-      var desc = descEl.value.trim();
-      if (!isFinite(kcal) || kcal < 0 || !desc) return;
-      addCalorie(kcal, desc);
-      amountEl.value = "";
-      descEl.value = "";
-      renderCalories();
-      amountEl.focus();
-    });
   }
 
   /* ---------------- Shared row builder ---------------- */
@@ -419,6 +428,103 @@
     });
   }
 
+  /* ---------------- CSV backup ---------------- */
+
+  function csvEscape(val) {
+    var s = String(val);
+    if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function toCSV(rows) {
+    return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
+  }
+
+  function parseCSV(text) {
+    var rows = [];
+    var row = [];
+    var field = "";
+    var inQuotes = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i++; }
+          else inQuotes = false;
+        } else {
+          field += c;
+        }
+      } else if (c === '"') {
+        inQuotes = true;
+      } else if (c === ",") {
+        row.push(field); field = "";
+      } else if (c === "\n") {
+        row.push(field); rows.push(row); row = []; field = "";
+      } else if (c !== "\r") {
+        field += c;
+      }
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    return rows.filter(function (r) { return !(r.length === 1 && r[0] === ""); });
+  }
+
+  function downloadFile(content, filename, mime) {
+    var blob = new Blob([content], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function exportCSV() {
+    var isSpend = analyticsTab === "spend";
+    var entries = (isSpend ? getSpend() : getCalories()).slice().sort(function (a, b) { return a.ts - b.ts; });
+    var header = isSpend ? ["Date", "Time", "Amount", "Description"] : ["Date", "Time", "Calories", "Description"];
+    var rows = [header];
+    entries.forEach(function (e) {
+      rows.push([e.dateISO, fmtTime24(e.ts), isSpend ? e.amount : e.calories, e.desc]);
+    });
+    downloadFile(toCSV(rows), (isSpend ? "spend" : "calories") + "-export.csv", "text/csv");
+  }
+
+  function importCSVFile(file) {
+    if (!file) return;
+    var isSpend = analyticsTab === "spend";
+    var valueKey = isSpend ? "amount" : "calories";
+    var reader = new FileReader();
+    reader.onload = function () {
+      var rows = parseCSV(String(reader.result));
+      var body = rows.slice(1);
+      var parsed = [];
+      body.forEach(function (r) {
+        if (r.length < 4) return;
+        var dateISO = r[0].trim();
+        var time = r[1].trim();
+        var value = parseFloat(r[2]);
+        var desc = r[3];
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO) || !isFinite(value) || value < 0) return;
+        var ts = parseISO(dateISO).getTime();
+        var timeMatch = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(time);
+        if (timeMatch) {
+          ts += (parseInt(timeMatch[1], 10) * 3600 + parseInt(timeMatch[2], 10) * 60 + parseInt(timeMatch[3] || "0", 10)) * 1000;
+        }
+        var entry = { id: uid(), dateISO: dateISO, ts: ts, desc: desc };
+        entry[valueKey] = value;
+        parsed.push(entry);
+      });
+      if (!parsed.length) { alert("No valid rows found in that CSV."); return; }
+      var label = isSpend ? "Spend" : "Calories";
+      if (!confirm("Import " + parsed.length + " " + label + " record(s)? This will replace all existing " + label + " records.")) return;
+      saveJSON(isSpend ? KEYS.spend : KEYS.calories, parsed);
+      renderAnalytics();
+    };
+    reader.readAsText(file);
+  }
+
   /* ---------------- Settings modal ---------------- */
 
   var overlayEl = document.getElementById("modal-overlay");
@@ -482,6 +588,19 @@
     else if (action === "analytics-tab") {
       analyticsTab = target.dataset.tab;
       renderAnalytics();
+    }
+    else if (action === "export-csv") {
+      exportCSV();
+    }
+    else if (action === "import-csv") {
+      document.getElementById("import-file-input").click();
+    }
+  });
+
+  document.addEventListener("change", function (ev) {
+    if (ev.target.id === "import-file-input") {
+      importCSVFile(ev.target.files[0]);
+      ev.target.value = "";
     }
   });
 

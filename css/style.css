@@ -73,8 +73,6 @@ button { font-family: inherit; }
 .glow-blue { color: var(--blue); text-shadow: 0 0 18px rgba(0,240,255,0.55); }
 .glow-pink { color: var(--pink); text-shadow: 0 0 18px rgba(255,45,149,0.55); }
 
-.tagline { color: var(--text-dim); margin-top: 8px; font-size: 15px; }
-
 .mode-buttons {
   display: flex;
   flex-direction: column;
@@ -402,3 +400,19 @@ button { font-family: inherit; }
 }
 .modal-btn--ghost { background: none; color: var(--text-dim); }
 .modal-btn--solid { background: var(--blue); color: #05070d; box-shadow: 0 0 14px rgba(0,240,255,0.5); }
+
+/* ---------- Data backup ---------- */
+.data-actions { display: flex; gap: 10px; }
+
+.data-btn {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+.data-btn:active { background: var(--bg-elevated); }
