@@ -487,5 +487,9 @@
 
   /* ---------------- Init ---------------- */
 
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist();
+  }
+
   showScreen("home");
 })();
